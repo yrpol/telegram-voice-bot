@@ -1,25 +1,49 @@
 import os
 import telebot
-import openai
+from openai import OpenAI
 from notion_client import Client
 import requests
 from dotenv import load_dotenv
+from datetime import datetime
+import pytz
 
-# Load environment variables from .env file (for local development)
 load_dotenv()
 
-# Initialize bot and API clients with environment variables
+# Initialize APIs
 bot = telebot.TeleBot(os.getenv('TELEGRAM_TOKEN'))
-openai.api_key = os.getenv('OPENAI_KEY')
+openai_client = OpenAI(api_key=os.getenv('OPENAI_KEY'))
 notion = Client(auth=os.getenv('NOTION_TOKEN'))
 DATABASE_ID = os.getenv('NOTION_DATABASE_ID')
 
+# Timezone configuration
+TIMEZONE = pytz.timezone('Europe/Riga')
+
+# Whitelist
+ALLOWED_USERS = [int(id) for id in os.getenv('ALLOWED_USERS').split(',')]
+
+def is_authorized(user_id):
+    """Check if user is authorized to use the bot"""
+    return user_id in ALLOWED_USERS
+
+def authorized_only(func):
+    """Decorator to restrict access to authorized users only"""
+    def wrapper(message):
+        if not is_authorized(message.from_user.id):
+            bot.reply_to(
+                message, 
+                "⛔️ У вас немає доступу до цього бота.\n"
+                f"Ваш ID: {message.from_user.id}"
+            )
+            print(f"❌ Unauthorized access attempt from {message.from_user.id} "
+                  f"(@{message.from_user.username})")
+            return
+        return func(message)
+    return wrapper
+
 @bot.message_handler(commands=['start', 'help'])
+@authorized_only
 def send_welcome(message):
-    """
-    Handle /start and /help commands
-    Send welcome message with instructions
-    """
+    """Handle /start and /help commands"""
     welcome_text = (
         "👋 Привіт! Я бот для голосових нотаток.\n\n"
         "📝 Надішли мені голосове повідомлення, і я:\n"
@@ -30,13 +54,11 @@ def send_welcome(message):
     bot.reply_to(message, welcome_text)
 
 @bot.message_handler(content_types=['voice'])
+@authorized_only
 def handle_voice(message):
-    """
-    Main handler for voice messages
-    Process: Download -> Transcribe -> Save to Notion
-    """
+    """Main handler for voice messages"""
     try:
-        # Send initial confirmation to user
+        # Send initial confirmation
         status_msg = bot.reply_to(message, "⏳ Обробляю голосове повідомлення...")
         
         # Step 1: Download audio file from Telegram
@@ -56,12 +78,12 @@ def handle_voice(message):
             status_msg.message_id
         )
         
-        # Step 2: Transcribe audio using OpenAI Whisper
+        # Step 2: Transcribe using Whisper
         with open(audio_filename, 'rb') as audio_file:
-            transcript = openai.audio.transcriptions.create(
+            transcript = openai_client.audio.transcriptions.create(
                 model="whisper-1",
                 file=audio_file,
-                language="uk"  # Ukrainian language
+                language="uk"
             )
         
         transcribed_text = transcript.text
@@ -73,12 +95,16 @@ def handle_voice(message):
             status_msg.message_id
         )
         
-        # Step 3: Save to Notion database
+        # Step 3: Convert timestamp to Riga timezone
+        utc_time = datetime.utcfromtimestamp(message.date).replace(tzinfo=pytz.UTC)
+        local_time = utc_time.astimezone(TIMEZONE)
+        message_date = local_time.isoformat()
+        
+        # Save to Notion with updated field names
         notion.pages.create(
             parent={"database_id": DATABASE_ID},
             properties={
-                # Title field - first 100 characters of transcription
-                "Назва": {
+                "Title": {
                     "title": [
                         {
                             "text": {
@@ -87,8 +113,7 @@ def handle_voice(message):
                         }
                     ]
                 },
-                # Full text field
-                "Текст": {
+                "Text": {
                     "rich_text": [
                         {
                             "text": {
@@ -96,21 +121,32 @@ def handle_voice(message):
                             }
                         }
                     ]
+                },
+                "Date": {
+                    "date": {
+                        "start": message_date
+                    }
                 }
             }
         )
         
-        # Clean up temporary audio file
+        # Clean up
         if os.path.exists(audio_filename):
             os.remove(audio_filename)
         
-        # Send success message with preview
+        # Success message with local time
+        formatted_date = local_time.strftime("%d.%m.%Y %H:%M")
+        
         preview_length = 300
         preview_text = transcribed_text[:preview_length]
         if len(transcribed_text) > preview_length:
             preview_text += "..."
         
-        success_message = f"✅ Успішно збережено в Notion!\n\n📝 Текст:\n{preview_text}"
+        success_message = (
+            f"✅ Успішно збережено!\n"
+            f"📅 Дата: {formatted_date}\n\n"
+            f"📝 Текст:\n{preview_text}"
+        )
         bot.edit_message_text(
             success_message,
             message.chat.id,
@@ -118,36 +154,32 @@ def handle_voice(message):
         )
         
     except Exception as e:
-        # Handle any errors and notify user
-        error_message = f"❌ Помилка: {str(e)}\n\nСпробуй ще раз або напиши /help"
+        error_message = f"❌ Помилка: {str(e)}"
         bot.reply_to(message, error_message)
-        print(f"Error processing voice message: {e}")
+        print(f"Error: {e}")
         
-        # Clean up temporary file in case of error
         if os.path.exists('voice.ogg'):
             os.remove('voice.ogg')
 
 @bot.message_handler(content_types=['text'])
+@authorized_only
 def handle_text(message):
-    """
-    Handle regular text messages
-    Remind user to send voice messages
-    """
+    """Handle text messages"""
     bot.reply_to(
         message, 
-        "🎤 Надішли мені голосове повідомлення, щоб я міг його обробити!\n\n"
-        "Або напиши /help для інструкцій."
+        "🎤 Надішли мені голосове повідомлення!\n\n"
+        "Або /help для інструкцій."
     )
 
-# Start the bot
+# Start bot
 if __name__ == '__main__':
-    print("🤖 Bot is starting...")
-    print("✅ Ready to receive voice messages!")
+    print("🤖 Bot starting...")
+    print(f"✅ Authorized users: {ALLOWED_USERS}")
+    print(f"🌍 Timezone: {TIMEZONE}")
     
-    # Start polling for messages (blocking call)
     try:
         bot.infinity_polling(timeout=10, long_polling_timeout=5)
     except KeyboardInterrupt:
-        print("\n👋 Bot stopped by user")
+        print("\n👋 Bot stopped")
     except Exception as e:
-        print(f"❌ Bot crashed: {e}")
+        print(f"❌ Error: {e}")
