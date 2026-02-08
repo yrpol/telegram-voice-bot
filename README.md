@@ -5,9 +5,11 @@ A Telegram bot for automatic voice message transcription using Whisper AI and sa
 ## Features
 
 - 🎙️ Receive voice messages in Telegram
+- 🎵 Support for audio files (Voice Memos from iPhone, .m4a, .mp3, .wav)
 - 🤖 Automatic transcription via OpenAI Whisper API
 - 📝 Save transcribed text to Notion database
 - 🕐 Automatic timestamp with timezone support (configurable)
+- ⏱️ Duration tracking for audio files
 - 🔒 User whitelist for private access
 
 ## Technologies
@@ -26,7 +28,30 @@ Before installation, obtain the following API keys:
 2. **OpenAI API Key** - at [platform.openai.com](https://platform.openai.com)
 3. **Notion Integration Token** - at [notion.so/my-integrations](https://www.notion.so/my-integrations)
 
-## Installation (Local)
+## Quick Start (Recommended)
+
+For the fastest setup, use the provided scripts:
+
+```bash
+# Clone the repository
+git clone https://github.com/your-username/telegram-voice-bot.git
+cd telegram-voice-bot
+
+# Run setup wizard (one-time setup)
+chmod +x setup.sh
+./setup.sh
+
+# Start the bot
+./start.sh
+```
+
+The setup wizard will:
+- Create virtual environment
+- Install all dependencies
+- Create .env file from template
+- Guide you through API key configuration
+
+## Manual Installation (Alternative)
 
 ### 1. Clone the repository
 
@@ -191,29 +216,72 @@ telegram-voice-bot/
 ├── bot.py              # Main bot code
 ├── requirements.txt    # Python dependencies
 ├── Procfile           # Railway configuration
+├── setup.sh           # Setup wizard script
+├── start.sh           # Bot start script
+├── stop.sh            # Bot stop script
 ├── .env               # Local variables (DO NOT commit!)
+├── .env.example       # Environment template
 ├── .gitignore         # Ignore .env and venv
 └── README.md          # This documentation
 ```
 
+### Helper Scripts
+
+- **`setup.sh`** - One-time setup wizard that creates venv, installs dependencies, and configures .env
+- **`start.sh`** - Activates venv and starts the bot (use this for daily use)
+- **`stop.sh`** - Stops running bot process cleanly
+
+
 ## Usage
+
+### Starting the Bot
+
+**Option 1: Using script (recommended)**
+```bash
+./start.sh
+```
+
+**Option 2: Manual start**
+```bash
+source venv/bin/activate
+python bot.py
+```
+
+### Stopping the Bot
+
+**Option 1: Using script**
+```bash
+./stop.sh
+```
+
+**Option 2: Manual stop**
+- Press `Ctrl+C` in terminal where bot is running
 
 ### Bot Commands
 
 - `/start` or `/help` - Show instructions
 - Send voice message - Automatic transcription
+- Send audio file - Automatic transcription (Voice Memos, .m4a, .mp3, .wav)
 
 ### Example Workflow
 
+**With Telegram voice message:**
 1. Send voice: "Buy milk, eggs and bread"
 2. Bot responds:
    ```
    ✅ Successfully saved!
    📅 Date: 08.02.2026 13:45
+   ⏱️ Duration: 0:12
    
    📝 Text:
    Buy milk, eggs and bread
    ```
+
+**With iPhone Voice Memo:**
+1. Record a Voice Memo on your iPhone
+2. Share it to Telegram (share to bot's chat)
+3. Bot automatically transcribes and saves to Notion
+
 3. Entry appears in Notion with full text
 
 ## Configuration

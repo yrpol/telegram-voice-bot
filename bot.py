@@ -46,28 +46,41 @@ def send_welcome(message):
     """Handle /start and /help commands"""
     welcome_text = (
         "👋 Привіт! Я бот для голосових нотаток.\n\n"
-        "📝 Надішли мені голосове повідомлення, і я:\n"
+        "📝 Надішли мені голосове повідомлення або аудіофайл, і я:\n"
         "1️⃣ Перетворю його в текст через Whisper AI\n"
         "2️⃣ Збережу в твою Notion базу даних\n\n"
-        "Просто надішли голосове - і все! 🎤"
+        "🎤 Підтримується:\n"
+        "• Голосові повідомлення Telegram\n"
+        "• Voice Memos з iPhone (.m4a)\n"
+        "• Будь-які аудіофайли (.mp3, .wav, тощо)\n\n"
+        "Просто надішли аудіо - і все! 🚀"
     )
     bot.reply_to(message, welcome_text)
 
-@bot.message_handler(content_types=['voice'])
+@bot.message_handler(content_types=['voice', 'audio'])
 @authorized_only
 def handle_voice(message):
-    """Main handler for voice messages"""
+    """Main handler for voice messages and audio files"""
     try:
         # Send initial confirmation
         status_msg = bot.reply_to(message, "⏳ Обробляю голосове повідомлення...")
         
         # Step 1: Download audio file from Telegram
-        file_info = bot.get_file(message.voice.file_id)
+        # Handle both voice messages and audio files (Voice Memos from iPhone)
+        if message.content_type == 'voice':
+            file_info = bot.get_file(message.voice.file_id)
+            audio_filename = 'voice.ogg'
+            duration = message.voice.duration
+        else:  # audio
+            file_info = bot.get_file(message.audio.file_id)
+            # Use original filename or default to audio.m4a
+            audio_filename = message.audio.file_name or 'audio.m4a'
+            duration = message.audio.duration
+        
         file_url = f'https://api.telegram.org/file/bot{bot.token}/{file_info.file_path}'
         file_response = requests.get(file_url)
         
         # Save audio temporarily
-        audio_filename = 'voice.ogg'
         with open(audio_filename, 'wb') as f:
             f.write(file_response.content)
         
@@ -96,7 +109,8 @@ def handle_voice(message):
         )
         
         # Step 3: Convert timestamp to Riga timezone
-        utc_time = datetime.utcfromtimestamp(message.date).replace(tzinfo=pytz.UTC)
+        # Using timezone-aware datetime instead of deprecated utcfromtimestamp
+        utc_time = datetime.fromtimestamp(message.date, tz=pytz.UTC)
         local_time = utc_time.astimezone(TIMEZONE)
         message_date = local_time.isoformat()
         
@@ -137,6 +151,9 @@ def handle_voice(message):
         # Success message with local time
         formatted_date = local_time.strftime("%d.%m.%Y %H:%M")
         
+        # Format duration in minutes:seconds
+        duration_str = f"{duration // 60}:{duration % 60:02d}"
+        
         preview_length = 300
         preview_text = transcribed_text[:preview_length]
         if len(transcribed_text) > preview_length:
@@ -144,7 +161,8 @@ def handle_voice(message):
         
         success_message = (
             f"✅ Успішно збережено!\n"
-            f"📅 Дата: {formatted_date}\n\n"
+            f"📅 Дата: {formatted_date}\n"
+            f"⏱️ Тривалість: {duration_str}\n\n"
             f"📝 Текст:\n{preview_text}"
         )
         bot.edit_message_text(
@@ -158,8 +176,14 @@ def handle_voice(message):
         bot.reply_to(message, error_message)
         print(f"Error: {e}")
         
-        if os.path.exists('voice.ogg'):
-            os.remove('voice.ogg')
+        # Clean up any temporary files
+        for ext in ['.ogg', '.m4a', '.mp3', '.wav']:
+            temp_file = f"voice{ext}"
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            temp_file = f"audio{ext}"
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
 
 @bot.message_handler(content_types=['text'])
 @authorized_only
@@ -167,7 +191,8 @@ def handle_text(message):
     """Handle text messages"""
     bot.reply_to(
         message, 
-        "🎤 Надішли мені голосове повідомлення!\n\n"
+        "🎤 Надішли мені голосове повідомлення або аудіофайл!\n\n"
+        "Підтримуються: Voice Memos, .m4a, .mp3, .wav\n\n"
         "Або /help для інструкцій."
     )
 
