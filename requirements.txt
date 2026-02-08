@@ -1,0 +1,5 @@
+pyTelegramBotAPI
+openai
+notion-client
+requests
+python-dotenv
